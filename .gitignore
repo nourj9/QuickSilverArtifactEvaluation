@@ -1,1 +1,4 @@
 /bin/
+.idea/
+Quicksilver.iml
+src/Main/TmpMain.java

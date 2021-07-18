@@ -28,238 +28,290 @@ import semantics.core.SemanticsGenerator;
 import utils.ReadStream;
 
 public class Utils {
-	public static RunInfo runBM(String prefix, String bmName, Options options) throws Exception {
-		RunInfo info = new RunInfo();
+    public static RunInfo runBM(String prefix, String bmName, Options options) throws Exception {
+        RunInfo info = new RunInfo();
 
-		print("\nbenchmark: " + bmName);
-		String[] parts = bmName.split("/");
-		info.benchmarkName = parts[parts.length - 1];
-		long before = System.currentTimeMillis();
+        print("\nbenchmark: " + bmName);
+        String[] parts = bmName.split("/");
+        info.benchmarkName = parts[parts.length - 1];
+        long before = System.currentTimeMillis();
 
-		CharStream input = null;
-		try {
-			input = CharStreams.fromFileName(prefix + "/" + bmName + ".ch");
-		} catch (NoSuchFileException e) {
-			System.err.println("The benchmark file " + prefix + "/" + bmName + ".ch does not exist.");
-			System.exit(-1);
-		}
+        CharStream input = null;
+        try {
+            input = CharStreams.fromFileName(prefix + "/" + bmName + ".ch");
+        } catch (NoSuchFileException e) {
+            System.err.println("The benchmark file " + prefix + "/" + bmName + ".ch does not exist.");
+            System.exit(-1);
+        }
 
-		// temp for eval
-		String[] lines = input.toString().split("\r\n|\r|\n");
-		info.LoC = lines.length;
+        // temp for eval
+        String[] lines = input.toString().split("\r\n|\r|\n");
+        info.LoC = lines.length;
 
-		Protocol p = MyParser.parse(input);
-		long after = System.currentTimeMillis();
-		info.parseTime = after - before;
+        Protocol p = MyParser.parse(input);
+        long after = System.currentTimeMillis();
+        info.parseTime = after - before;
 
-		info.numOfAMLHandlers = p.getTotalNumOfHandlers();
+        info.numOfAMLHandlers = p.getTotalNumOfHandlers();
 
-		// print("crashes", p.getCrashs());
+        // print("crashes", p.getCrashs());
 
-		if (options.main_verbose) {
-			print("before preprocessing", p);
-		}
-		before = System.currentTimeMillis();
-		new PreProcessing(p, options).preprocess();
-		after = System.currentTimeMillis();
-		info.preProcessingTime = after - before;
+        if (options.main_verbose) {
+            print("before preprocessing", p);
+        }
+        before = System.currentTimeMillis();
+        new PreProcessing(p, options).preprocess();
+        after = System.currentTimeMillis();
+        info.preProcessingTime = after - before;
 
-		if (options.main_verbose) {
-			print("after preprocessing", p);
-		}
+        if (options.main_verbose) {
+            print("after preprocessing", p);
+        }
 
-		info.numOfCoreHandlers = p.getTotalNumOfHandlers();
+        info.numOfCoreHandlers = p.getTotalNumOfHandlers();
 
-		// Edit: we will start as follows: we will detect BAC, and if it exists, we will
-		// add the needed transition to the crash location, then generate code, then
-		// remove it, remove bac and proceed normally.
+        // Edit: we will start as follows: we will detect BAC, and if it exists, we will
+        // add the needed transition to the crash location, then generate code, then
+        // remove it, remove bac and proceed normally.
 
-		long semanticsGenerationTime = 0;
+        long semanticsGenerationTime = 0;
 
-		before = System.currentTimeMillis();
-		StructureSummarizer summarizer = new StructureSummarizer(false,
-				options.summerizer_removeNegotationStepResultingFromBAC, p, options);
+        before = System.currentTimeMillis();
+        StructureSummarizer summarizer = new StructureSummarizer(false,
+                options.summerizer_removeNegotationStepResultingFromBAC, p, options);
 
-		summarizer.detectBACs();
-		boolean hasBACs = summarizer.hasBACs();
-		after = System.currentTimeMillis();
-		semanticsGenerationTime += (after - before);
+        summarizer.detectBACs();
+        boolean hasBACs = summarizer.hasBACs();
+        after = System.currentTimeMillis();
+        semanticsGenerationTime += (after - before);
 
-		if (hasBACs) {
+        if (hasBACs) {
 
-			// 1. remove the "self-loop" reply on the broadcast receive
-			// 2. inject the negative reply on the crash state
-			before = System.currentTimeMillis();
-			summarizer.enableNegativeReplyFromCrashLocs();
-			after = System.currentTimeMillis();
-			semanticsGenerationTime += (after - before);
+            // 1. remove the "self-loop" reply on the broadcast receive
+            // 2. inject the negative reply on the crash state
+            before = System.currentTimeMillis();
+            summarizer.enableNegativeReplyFromCrashLocs();
+            after = System.currentTimeMillis();
+            semanticsGenerationTime += (after - before);
 
-			// 3. generate code
-			before = System.currentTimeMillis();
-			new KinaraCodeGenerator(options).generateCode(p);
-			after = System.currentTimeMillis();
-			info.codeGenerationTime = after - before;
+            // 3. generate code
+            before = System.currentTimeMillis();
+            new KinaraCodeGenerator(options).generateCode(p);
+            after = System.currentTimeMillis();
+            info.codeGenerationTime = after - before;
 
-			// 4. delete BAC and the crash reply mechanism
-			before = System.currentTimeMillis();
-			summarizer.removecrashReplyLogicAndRestoreSelfLoopOnCrash();
-			summarizer.removeBACs();
-			summarizer.postBACleanUp();
-			after = System.currentTimeMillis();
-			semanticsGenerationTime += (after - before);
+            // 4. delete BAC and the crash reply mechanism
+            before = System.currentTimeMillis();
+            summarizer.removecrashReplyLogicAndRestoreSelfLoopOnCrash();
+            summarizer.removeBACs();
+            summarizer.postBACleanUp();
+            after = System.currentTimeMillis();
+            semanticsGenerationTime += (after - before);
 
-		} else {
+        } else {
 
-			// just generate code
-			before = System.currentTimeMillis();
-			new KinaraCodeGenerator(options).generateCode(p);
-			after = System.currentTimeMillis();
-			info.codeGenerationTime = after - before;
+            // just generate code
+            before = System.currentTimeMillis();
+            new KinaraCodeGenerator(options).generateCode(p);
+            after = System.currentTimeMillis();
+            info.codeGenerationTime = after - before;
 
-		}
+        }
 
-		before = System.currentTimeMillis();
-		SemanticsGenerator sg = new SemanticsGenerator(p, summarizer, options);
-		ProcessSemantics ps = sg.createSemantics();
-		after = System.currentTimeMillis();
-		semanticsGenerationTime += (after - before);
-		info.procSemGenTime = semanticsGenerationTime;
+        before = System.currentTimeMillis();
+        SemanticsGenerator sg = new SemanticsGenerator(p, summarizer, options);
+        ProcessSemantics ps = sg.createSemantics();
+        after = System.currentTimeMillis();
+        semanticsGenerationTime += (after - before);
+        info.procSemGenTime = semanticsGenerationTime;
 
-		before = System.currentTimeMillis();
-		PhaseCompatibilityChecker wb = new PhaseCompatibilityChecker(ps, options);
-		after = System.currentTimeMillis();
-		boolean phaseCompatible = wb.check();
-		info.wellBehavCheckTime = after - before;
+        before = System.currentTimeMillis();
+        PhaseCompatibilityChecker wb = new PhaseCompatibilityChecker(ps, options);
+        after = System.currentTimeMillis();
+        boolean phaseCompatible = wb.check();
+        info.wellBehavCheckTime = after - before;
 
-		info.isPhaseCompatible = phaseCompatible;
+        info.isPhaseCompatible = phaseCompatible;
 
-		if (options.main_verbose) {
-			print("semantics", ps.prettyString());
-			wb.dumpPhases();
-		}
-		System.out.println(" phase-compatible? " + phaseCompatible);
+        if (options.main_verbose) {
+            print("semantics", ps.prettyString());
+            wb.dumpPhases();
+        }
+        System.out.println(" phase-compatible? " + phaseCompatible);
 
-		if (phaseCompatible) {
+        if (phaseCompatible) {
 
-			before = System.currentTimeMillis();
-			Cutoffs cutoffs = new Cutoffs(p, ps, p.getSafetySpecs(), options);
-			int c = cutoffs.computeCutoff();
-			after = System.currentTimeMillis();
-			info.cutoffCheckTime = after - before;
-			info.cutoff = c;
-			if (c != Integer.MAX_VALUE) {
-				System.out.println(" cutoff value: " + c);
-			} else {
+            before = System.currentTimeMillis();
+            Cutoffs cutoffs = new Cutoffs(p, ps, p.getSafetySpecs(), options);
+            int c = cutoffs.computeCutoff();
+            after = System.currentTimeMillis();
+            info.cutoffCheckTime = after - before;
+            info.cutoff = c;
+            if (c != Integer.MAX_VALUE) {
+                System.out.println(" cutoff value: " + c);
+            } else {
 
-				System.out.println("Couldn't compute cutoffs..");
+                System.out.println("Couldn't compute cutoffs..");
 
-				if (options.main_verbose) {
-					System.out.println(cutoffs.getSemantics().prettyString());
-				}
-				cutoffs.printErrors(options);
-			}
+                if (options.main_verbose) {
+                    System.out.println(cutoffs.getSemantics().prettyString());
+                }
+                cutoffs.printErrors(options);
+            }
 
-		} else {
-			wb.printErrorsAndSuggestions(options);
-		}
+        } else {
+            wb.printErrorsAndSuggestions(options);
+        }
 
-		info.numOfPhases = ps.getPhaseAnalysis().getPhases().size();
-		info.computeTotalTime();
+        info.numOfPhases = ps.getPhaseAnalysis().getPhases().size();
+        info.computeTotalTime();
 
-		return info;
+        return info;
 
-	}
+    }
 
-	public static void print(String msg) {
-		System.out.println(msg);
-	}
+    public static void print(String msg) {
+        System.out.println(msg);
+    }
 
-	public static void print(String msg, Object obj) {
-		System.out.println("======== " + msg + " =============================================================");
-		System.out.println(obj);
-	}
+    public static void print(String msg, Object obj) {
+        System.out.println("======== " + msg + " =============================================================");
+        System.out.println(obj);
+    }
 
-	public static void printTableLike(HashMap<String, ArrayList<RunInfo>> data, ArrayList<String> benchmarks) {
-		System.out.println();
+    public static void printTableLike(HashMap<String, ArrayList<RunInfo>> rawData, ArrayList<String> benchmarks, Options options) {
 
-		StringBuilder sb = new StringBuilder();
+        // so we can print averages.
+        HashMap<String, RunInfo> averagedData = averageRunsOfTheSameBenchmark(rawData);
 
-		sb.append("Benchmark                        LoC\tPhases\tCutoff\tTime(s)\n");
-		sb.append("------------------------------------------------------------------\n");
+        System.out.println();
+        StringBuilder sb = new StringBuilder();
 
-		// table-like
-		for (String bm : benchmarks) {
-			RunInfo info = data.get(bm).get(0);
+        sb.append("Benchmark                        LoC\tPhases\tCutoff\tTime(s)\n");
+        sb.append("------------------------------------------------------------------\n");
 
-			String name = info.benchmarkName;
-			sb.append(name);
+        // table-like
+        for (String bm : benchmarks) {
+            RunInfo info = averagedData.get(bm);
 
-			int spaces = 33 - name.length();
-			for (int i = 0; i < spaces; i++) {
-				sb.append(" ");
-			}
+            String name = info.benchmarkName;
+            sb.append(name);
 
-			sb.append(info.LoC + "\t");
-			sb.append(info.numOfPhases + "\t");
-			sb.append(info.cutoff + "\t");
-			sb.append(info.totalTime / 1000.0); // so it's in seconds
-			sb.append("\n");
-		}
-		System.out.println(sb.toString());
+            int spaces = 33 - name.length();
+            for (int i = 0; i < spaces; i++) {
+                sb.append(" ");
+            }
 
-	}
+            sb.append(info.LoC + "\t");
+            sb.append(info.numOfPhases + "\t");
+            sb.append(info.cutoff + "\t");
+            sb.append(info.totalTime / 1000.0); // so it's in seconds
 
-	public static void printCutoffs(HashMap<String, ArrayList<RunInfo>> data) {
-		// cutoff
-		System.out.println("\nCutoffs:");
-		for (Entry<String, ArrayList<RunInfo>> entry : data.entrySet()) {
-			System.out.println(entry.getValue().get(0).benchmarkName + " " + entry.getValue().get(0).cutoff);
-		}
+            if (options.run_confidenceLevel95) {
+                if (info.errorMargin95 > 0)
+                    sb.append(" +/- " + (info.errorMargin95 / 1000.0));
+            } else if (options.run_confidenceLevel99) {
+                if (info.errorMargin99 > 0)
+                    sb.append(" +/- " + (info.errorMargin99 / 1000.0));
+            }
 
-	}
+            sb.append("\n");
+        }
+        System.out.println(sb.toString());
 
-	public static void printCheckTime(HashMap<String, ArrayList<RunInfo>> data) {
-		// check time
-		System.out.println("\nCheck Time:");
-		for (Entry<String, ArrayList<RunInfo>> entry : data.entrySet()) {
-			System.out.print(entry.getValue().get(0).benchmarkName + " ");
-			int sum = 0;
-			for (RunInfo info : entry.getValue()) {
-				sum += info.totalTime;
-			}
-			System.out.println((double) sum / entry.getValue().size());
-		}
+    }
 
-	}
+    private static HashMap<String, RunInfo> averageRunsOfTheSameBenchmark(HashMap<String, ArrayList<RunInfo>> data) {
+        HashMap<String, RunInfo> results = new HashMap<String, RunInfo>();
+        for (Entry<String, ArrayList<RunInfo>> dataEntry : data.entrySet()) {
 
-	public static void printAllInfo(HashMap<String, ArrayList<RunInfo>> data) {
-		// all of it
-		for (Entry<String, ArrayList<RunInfo>> entry : data.entrySet()) {
-			System.out.println("Data for benckmark: " + entry.getValue().get(0).benchmarkName);
-			for (RunInfo info : entry.getValue()) {
-				System.out.println(info);
-			}
-			System.out.println();
-		}
+            String bmName = dataEntry.getKey();
+            ArrayList<RunInfo> runs = dataEntry.getValue();
 
-	}
+            double sum = 0.0;
+            for (RunInfo run : runs) {
+                sum += run.totalTime;
+            }
 
-	public static String generatCompileCommadForKinara(ArrayList<String> benchmarks, String kinaraBemckmarkFolder) {
-		StringBuilder sb = new StringBuilder();
+            double mean = sum / runs.size();
 
-		sb.append("cd ");
-		sb.append(kinaraBemckmarkFolder);
-		sb.append(" && make eopt ");
-		sb.append("'PROJECT_EXECUTABLES=");
-		for (String bm : benchmarks) {
-			String[] parts = bm.split("/");
-			sb.append("gen_" + parts[parts.length - 1] + " ");
-		}
-		sb.append("'");
+            double stdDev = 0.0;
+            for (RunInfo run : runs) {
+                stdDev += Math.pow(run.totalTime - mean, 2);
+            }
 
-		return sb.toString();
+            stdDev = Math.sqrt(stdDev / runs.size());
 
-	}
+            // error margin for 95% confidence (95% use 1.960  and 99% use 2.576)
+            double errorMargin95 = 1.96 * (stdDev / Math.sqrt(runs.size()));
+            double errorMargin99 = 2.576 * (stdDev / Math.sqrt(runs.size()));
+
+            //clone a sample run for things that do not change.
+            RunInfo ri = runs.get(0).makeClone();
+
+            // populate the new results.
+            ri.totalTime = mean;
+            ri.stdDev = stdDev;
+            ri.errorMargin95 = errorMargin95;
+            ri.errorMargin99 = errorMargin99;
+
+            results.put(bmName, ri);
+        }
+
+        return results;
+    }
+
+    public static void printCutoffs(HashMap<String, ArrayList<RunInfo>> data) {
+        // cutoff
+        System.out.println("\nCutoffs:");
+        for (Entry<String, ArrayList<RunInfo>> entry : data.entrySet()) {
+            System.out.println(entry.getValue().get(0).benchmarkName + " " + entry.getValue().get(0).cutoff);
+        }
+
+    }
+
+    public static void printCheckTime(HashMap<String, ArrayList<RunInfo>> data) {
+        // check time
+        System.out.println("\nCheck Time:");
+        for (Entry<String, ArrayList<RunInfo>> entry : data.entrySet()) {
+            System.out.print(entry.getValue().get(0).benchmarkName + " ");
+            int sum = 0;
+            for (RunInfo info : entry.getValue()) {
+                sum += info.totalTime;
+            }
+            System.out.println((double) sum / entry.getValue().size());
+        }
+
+    }
+
+    public static void printAllInfo(HashMap<String, ArrayList<RunInfo>> data) {
+        // all of it
+        for (Entry<String, ArrayList<RunInfo>> entry : data.entrySet()) {
+            System.out.println("Data for benckmark: " + entry.getValue().get(0).benchmarkName);
+            for (RunInfo info : entry.getValue()) {
+                System.out.println(info);
+            }
+            System.out.println();
+        }
+
+    }
+
+    public static String generatCompileCommadForKinara(ArrayList<String> benchmarks, String kinaraBemckmarkFolder) {
+        StringBuilder sb = new StringBuilder();
+
+        sb.append("cd ");
+        sb.append(kinaraBemckmarkFolder);
+        sb.append(" && make eopt ");
+        sb.append("'PROJECT_EXECUTABLES=");
+        for (String bm : benchmarks) {
+            String[] parts = bm.split("/");
+            sb.append("gen_" + parts[parts.length - 1] + " ");
+        }
+        sb.append("'");
+
+        return sb.toString();
+
+    }
 
 //	public static void runtimeCommand(String inputCmd) throws Exception {
 //
@@ -281,278 +333,289 @@ public class Utils {
 //
 //	}
 
-	public static void runtimeCommand(String inputCmd) throws Exception {
+    public static void runtimeCommand(String inputCmd) throws Exception {
 
-		String[] commands = { "/bin/bash", "-c", inputCmd };
-		// System.out.println("Running command: " + commands[0] + " " + commands[1] + "
-		// " + commands[2]);
+        String[] commands = {"/bin/bash", "-c", inputCmd};
+        // System.out.println("Running command: " + commands[0] + " " + commands[1] + "
+        // " + commands[2]);
 
-		Process pr = Runtime.getRuntime().exec(commands);
+        Process pr = Runtime.getRuntime().exec(commands);
 
-		ReadStream s1 = new ReadStream("stdin", pr.getInputStream(), new File("logs/out.txt"));
-		ReadStream s2 = new ReadStream("stderr", pr.getErrorStream(), new File("logs/err.txt"));
+        ReadStream s1 = new ReadStream("stdin", pr.getInputStream(), new File("logs/out.txt"));
+        ReadStream s2 = new ReadStream("stderr", pr.getErrorStream(), new File("logs/err.txt"));
 
-		s1.start();
-		s2.start();
+        s1.start();
+        s2.start();
 
-		pr.waitFor();
+        pr.waitFor();
 
-		// new
-		s1.join();
-		s2.join();
+        // new
+        s1.join();
+        s2.join();
 
-		// int exitVal = pr.waitFor();
-		// System.out.println("ExitValue: " + exitVal);
+        // int exitVal = pr.waitFor();
+        // System.out.println("ExitValue: " + exitVal);
 
-	}
+    }
 
-	public static void runtimeCommand(String inputCmd, boolean stdOut) throws Exception {
+    public static void runtimeCommand(String inputCmd, boolean stdOut) throws Exception {
 
-		String[] commands = { "/bin/bash", "-c", inputCmd };
-		// System.out.println("Running command: " + commands[0] + " " + commands[1] + "
-		// " + commands[2]);
+        String[] commands = {"/bin/bash", "-c", inputCmd};
+        // System.out.println("Running command: " + commands[0] + " " + commands[1] + "
+        // " + commands[2]);
 
-		Process pr = Runtime.getRuntime().exec(commands);
+        Process pr = Runtime.getRuntime().exec(commands);
 
-		ReadStream s1 = null;
-		if (stdOut) {
-			s1 = new ReadStream("stdin", pr.getInputStream());
-		} else {
-			s1 = new ReadStream("stdin", pr.getInputStream(), new File("logs/out.txt"));
-		}
+        ReadStream s1 = null;
+        if (stdOut) {
+            s1 = new ReadStream("stdin", pr.getInputStream());
+        } else {
+            s1 = new ReadStream("stdin", pr.getInputStream(), new File("logs/out.txt"));
+        }
 
-		ReadStream s2 = new ReadStream("stderr", pr.getErrorStream(), new File("logs/err.txt"));
+        ReadStream s2 = new ReadStream("stderr", pr.getErrorStream(), new File("logs/err.txt"));
 
-		s1.start();
-		s2.start();
+        s1.start();
+        s2.start();
 
-		pr.waitFor();
+        pr.waitFor();
 
-		// int exitVal = pr.waitFor();
-		// System.out.println("ExitValue: " + exitVal);
+        // int exitVal = pr.waitFor();
+        // System.out.println("ExitValue: " + exitVal);
 
-	}
+    }
 
-	public static String generateRunCommandForBM(RunInfo bmInfo, String kinaraDestFolder) {
+    public static String generateRunCommandForBM(RunInfo bmInfo, String kinaraDestFolder) {
 
-		int cutoffVal = bmInfo.cutoff;
-		String bmName = "gen_" + bmInfo.benchmarkName;
+        int cutoffVal = bmInfo.cutoff;
+        String bmName = "gen_" + bmInfo.benchmarkName;
 
-		return kinaraDestFolder + "bin/opt/" + bmName + " " + cutoffVal;
-	}
+        return kinaraDestFolder + "bin/opt/" + bmName + " " + cutoffVal;
+    }
 
-	public static void runAllBMs(boolean useFirabilityAwareness, Options options) throws Exception {
+    public static void runAllBMs(boolean useFirabilityAwareness, Options options) throws Exception {
 
-		ArrayList<String> benchmarks = new ArrayList<String>();
+        ArrayList<String> benchmarks = new ArrayList<String>();
 
-		// benchmarks, normal operation
-		String prefix = "benchmarks";
+        // benchmarks, normal operation
+        String prefix = "benchmarks";
 
-		if (!useFirabilityAwareness) {
-			prefix = "benchmarks_no_crashes"; // without the extension (and crashes)
-			options.phComp_enableFirabilityAwareness = false;
-		}
+        if (!useFirabilityAwareness) {
+            prefix = "benchmarks_no_crashes"; // without the extension (and crashes)
+            options.phComp_enableFirabilityAwareness = false;
+        }
 
-		benchmarks.add("DistributedStore");
-		benchmarks.add("Consortium");
-		benchmarks.add("TwoObjectTracker");
-		benchmarks.add("DistributedRobotFlocking");
-		benchmarks.add("DistributedLockService");
-		benchmarks.add("DistributedSensorNetwork");
-		benchmarks.add("SensorNetworkwithReset");
-		benchmarks.add("SATSLandingProtocol");
-		benchmarks.add("SATSLandingProtocol_II");
-		benchmarks.add("MobileRoboticsMotionPlanning");
-		benchmarks.add("MobileRoboticswithReset");
-		benchmarks.add("DistributedRegister");
+        benchmarks.add("DistributedStore");
+        benchmarks.add("Consortium");
+        benchmarks.add("TwoObjectTracker");
+        benchmarks.add("DistributedRobotFlocking");
+        benchmarks.add("DistributedLockService");
+        benchmarks.add("DistributedSensorNetwork");
+        benchmarks.add("SensorNetworkwithReset");
+        benchmarks.add("SATSLandingProtocol");
+        benchmarks.add("SATSLandingProtocol_II");
+        benchmarks.add("MobileRoboticsMotionPlanning");
+        benchmarks.add("MobileRoboticswithReset");
+        benchmarks.add("DistributedRegister");
 
-		int repeats = 1;
-		LinkedHashMap<String, ArrayList<RunInfo>> data = new LinkedHashMap<String, ArrayList<RunInfo>>();
-		for (String bm : benchmarks) {
-			ArrayList<RunInfo> bmRuns = new ArrayList<RunInfo>();
-			for (int i = 0; i < repeats; i++) {
-				RunInfo rinfo = Utils.runBM(prefix, bm, options);
-				// if (i >= 2) {
-				bmRuns.add(rinfo);
-				// }
-				Thread.sleep(500);
-			}
-			data.put(bm, bmRuns);
-		}
+        // repeat this as many times as requested
+        int repeats;
+        if (useFirabilityAwareness) {
+            repeats = options.run_repeats;
+        } else {
+            repeats = 1;  // we don't care about this for the comparison
+        }
 
-		if (useFirabilityAwareness) {
-			// kinara compilation
-			System.out.println("Compiling generated kinara models...");
-			String compileCommand = Utils.generatCompileCommadForKinara(benchmarks, options.kinaraDestFolder);
-			Utils.runtimeCommand(compileCommand, true);
+        LinkedHashMap<String, ArrayList<RunInfo>> data = new LinkedHashMap<String, ArrayList<RunInfo>>();
+        for (String bm : benchmarks) {
+            ArrayList<RunInfo> bmRuns = new ArrayList<RunInfo>();
+            for (int i = 0; i < repeats; i++) {
+                RunInfo rinfo = Utils.runBM(prefix, bm, options);
+                // if (i >= 2) {
+                bmRuns.add(rinfo);
+                // }
+                Thread.sleep(500);
+            }
+            data.put(bm, bmRuns);
+        }
 
-			// running kinara
-			System.out.println("Running the kinara model checker...");
-			for (Entry<String, ArrayList<RunInfo>> bmPair : data.entrySet()) {
-				RunInfo runInfo = bmPair.getValue().get(0);
-				String runCmd = Utils.generateRunCommandForBM(runInfo, options.kinaraDestFolder);
+        if (useFirabilityAwareness) {
+            // kinara compilation
+            System.out.println("Compiling generated kinara models...");
+            String compileCommand = Utils.generatCompileCommadForKinara(benchmarks, options.kinaraDestFolder);
+            Utils.runtimeCommand(compileCommand, true);
 
-				long before = System.currentTimeMillis();
-				System.out.print("Running " + runInfo.benchmarkName + " ... ");
-				Utils.runtimeCommand(runCmd);
-				long after = System.currentTimeMillis();
-				System.out.println("Done");
-				runInfo.totalTime += (after - before);
-			}
+            // running kinara
+            System.out.println("Running the kinara model checker...");
+            for (Entry<String, ArrayList<RunInfo>> bmPair : data.entrySet()) {
+                ArrayList<RunInfo> currentRuns = bmPair.getValue();
 
-			// dump results
-			Utils.printTableLike(data, benchmarks);
-		} else {
+                for (RunInfo runInfo : currentRuns) {
 
-			System.out.println("\n---------------------------------------------------");
-			System.out.println("The following systems are now not phase-compatible:");
-			for (Entry<String, ArrayList<RunInfo>> bmPair : data.entrySet()) {
-				RunInfo runInfo = bmPair.getValue().get(0);
-				if (!runInfo.isPhaseCompatible) {
-					System.out.println(runInfo.benchmarkName);
-				}
-			}
-			System.out.println();
+                    String runCmd = Utils.generateRunCommandForBM(runInfo, options.kinaraDestFolder);
 
-		}
-	}
+                    long before = System.currentTimeMillis();
+                    System.out.print("Running " + runInfo.benchmarkName + " ... ");
+                    Utils.runtimeCommand(runCmd);
+                    long after = System.currentTimeMillis();
 
-	public static void runBM(String bmName, Options options) throws Exception {
+                    System.out.println("Done");
+                    runInfo.totalTime += (after - before);
+                }
+            }
+            // dump results
+            Utils.printTableLike(data, benchmarks, options);
+        } else {
 
-		ArrayList<String> benchmarks = new ArrayList<String>();
+            System.out.println("\n---------------------------------------------------");
+            System.out.println("The following systems are now not phase-compatible:");
+            for (Entry<String, ArrayList<RunInfo>> bmPair : data.entrySet()) {
+                RunInfo runInfo = bmPair.getValue().get(0);
+                if (!runInfo.isPhaseCompatible) {
+                    System.out.println(runInfo.benchmarkName);
+                }
+            }
+            System.out.println();
 
-		// benchmarks, normal operation
-		String prefix = "benchmarks";
-		benchmarks.add(bmName);
+        }
+    }
 
-		int repeats = 1;
-		LinkedHashMap<String, ArrayList<RunInfo>> data = new LinkedHashMap<String, ArrayList<RunInfo>>();
-		for (String bm : benchmarks) {
-			ArrayList<RunInfo> bmRuns = new ArrayList<RunInfo>();
-			for (int i = 0; i < repeats; i++) {
-				RunInfo rinfo = Utils.runBM(prefix, bm, options);
-				// if (i >= 2) {
-				bmRuns.add(rinfo);
-				// }
-				Thread.sleep(500);
-			}
-			data.put(bm, bmRuns);
-		}
+    public static void runBM(String bmName, Options options) throws Exception {
 
-		long before = System.currentTimeMillis();
-		// kinara compilation
-		System.out.println("Compiling generated kinara model...");
-		String compileCommand = Utils.generatCompileCommadForKinara(benchmarks, options.kinaraDestFolder);
-		Utils.runtimeCommand(compileCommand, true);
+        ArrayList<String> benchmarks = new ArrayList<String>();
 
-		// running kinara
-		System.out.println("Running the kinara model checker...");
-		for (Entry<String, ArrayList<RunInfo>> bmPair : data.entrySet()) {
-			RunInfo runInfo = bmPair.getValue().get(0);
-			String runCmd = Utils.generateRunCommandForBM(runInfo, options.kinaraDestFolder);
-			System.out.print("Running " + runInfo.benchmarkName + " ... ");
-			Utils.runtimeCommand(runCmd);
-			long after = System.currentTimeMillis();
-			System.out.println("Done");
-			runInfo.totalTime += (after - before);
-			checkNoKinaraErrors();
-		}
+        // benchmarks, normal operation
+        String prefix = "benchmarks";
+        benchmarks.add(bmName);
 
-		// dump results
-		Utils.printTableLike(data, benchmarks);
+        int repeats = 1;
+        LinkedHashMap<String, ArrayList<RunInfo>> data = new LinkedHashMap<String, ArrayList<RunInfo>>();
+        for (String bm : benchmarks) {
+            ArrayList<RunInfo> bmRuns = new ArrayList<RunInfo>();
+            for (int i = 0; i < repeats; i++) {
+                RunInfo rinfo = Utils.runBM(prefix, bm, options);
+                // if (i >= 2) {
+                bmRuns.add(rinfo);
+                // }
+                Thread.sleep(500);
+            }
+            data.put(bm, bmRuns);
+        }
 
-	}
+        long before = System.currentTimeMillis();
+        // kinara compilation
+        System.out.println("Compiling generated kinara model...");
+        String compileCommand = Utils.generatCompileCommadForKinara(benchmarks, options.kinaraDestFolder);
+        Utils.runtimeCommand(compileCommand, true);
 
-	public static void runBM(String bmName, int userCutoff, Options options) throws Exception {
+        // running kinara
+        System.out.println("Running the kinara model checker...");
+        for (Entry<String, ArrayList<RunInfo>> bmPair : data.entrySet()) {
+            RunInfo runInfo = bmPair.getValue().get(0);
+            String runCmd = Utils.generateRunCommandForBM(runInfo, options.kinaraDestFolder);
+            System.out.print("Running " + runInfo.benchmarkName + " ... ");
+            Utils.runtimeCommand(runCmd);
+            long after = System.currentTimeMillis();
+            System.out.println("Done");
+            runInfo.totalTime += (after - before);
+            checkNoKinaraErrors();
+        }
 
-		ArrayList<String> benchmarks = new ArrayList<String>();
+        // dump results
+        Utils.printTableLike(data, benchmarks, options);
 
-		// benchmarks, normal operation
-		String prefix = "benchmarks";
-		benchmarks.add(bmName);
+    }
 
-		int repeats = 1;
-		LinkedHashMap<String, ArrayList<RunInfo>> data = new LinkedHashMap<String, ArrayList<RunInfo>>();
-		for (String bm : benchmarks) {
-			ArrayList<RunInfo> bmRuns = new ArrayList<RunInfo>();
-			for (int i = 0; i < repeats; i++) {
-				RunInfo rinfo = Utils.runBM(prefix, bm, options);
-				// if (i >= 2) {
-				bmRuns.add(rinfo);
-				// }
-				Thread.sleep(500);
-			}
-			data.put(bm, bmRuns);
-		}
+    public static void runBM(String bmName, int userCutoff, Options options) throws Exception {
 
-		// kinara compilation
-		System.out.println("Compiling generated kinara model...");
-		String compileCommand = Utils.generatCompileCommadForKinara(benchmarks, options.kinaraDestFolder);
-		Utils.runtimeCommand(compileCommand, true);
+        ArrayList<String> benchmarks = new ArrayList<String>();
 
-		// running kinara
-		System.out.println("Running the kinara model checker...");
-		for (Entry<String, ArrayList<RunInfo>> bmPair : data.entrySet()) {
-			RunInfo runInfo = bmPair.getValue().get(0);
+        // benchmarks, normal operation
+        String prefix = "benchmarks";
+        benchmarks.add(bmName);
 
-			// here, inject the user-specified cutoff
-			runInfo.cutoff = userCutoff;
+        int repeats = 1;
+        LinkedHashMap<String, ArrayList<RunInfo>> data = new LinkedHashMap<String, ArrayList<RunInfo>>();
+        for (String bm : benchmarks) {
+            ArrayList<RunInfo> bmRuns = new ArrayList<RunInfo>();
+            for (int i = 0; i < repeats; i++) {
+                RunInfo rinfo = Utils.runBM(prefix, bm, options);
+                // if (i >= 2) {
+                bmRuns.add(rinfo);
+                // }
+                Thread.sleep(500);
+            }
+            data.put(bm, bmRuns);
+        }
 
-			String runCmd = Utils.generateRunCommandForBM(runInfo, options.kinaraDestFolder);
+        // kinara compilation
+        System.out.println("Compiling generated kinara model...");
+        String compileCommand = Utils.generatCompileCommadForKinara(benchmarks, options.kinaraDestFolder);
+        Utils.runtimeCommand(compileCommand, true);
 
-			long before = System.currentTimeMillis();
-			System.out.print("Running " + runInfo.benchmarkName + " ... ");
-			Utils.runtimeCommand(runCmd);
-			long after = System.currentTimeMillis();
-			System.out.println("Done");
-			runInfo.totalTime += (after - before);
-			checkNoKinaraErrors();
-		}
+        // running kinara
+        System.out.println("Running the kinara model checker...");
+        for (Entry<String, ArrayList<RunInfo>> bmPair : data.entrySet()) {
+            RunInfo runInfo = bmPair.getValue().get(0);
 
-		// dump results
-		Utils.printTableLike(data, benchmarks);
+            // here, inject the user-specified cutoff
+            runInfo.cutoff = userCutoff;
 
-	}
+            String runCmd = Utils.generateRunCommandForBM(runInfo, options.kinaraDestFolder);
 
-	private static void checkNoKinaraErrors() {
+            long before = System.currentTimeMillis();
+            System.out.print("Running " + runInfo.benchmarkName + " ... ");
+            Utils.runtimeCommand(runCmd);
+            long after = System.currentTimeMillis();
+            System.out.println("Done");
+            runInfo.totalTime += (after - before);
+            checkNoKinaraErrors();
+        }
 
-		StringBuilder content = new StringBuilder();
-		BufferedReader br = null;
-		try {
-			br = new BufferedReader(new FileReader("logs/out.txt"));
+        // dump results
+        Utils.printTableLike(data, benchmarks, options);
 
-			String sCurrentLine;
-			while ((sCurrentLine = br.readLine()) != null) {
-				content.append(sCurrentLine).append("\n");
-			}
-			if (br != null) {
-				br.close();
-			}
-		} catch (FileNotFoundException e) {
-			// we'll get an empty content
-		} catch (IOException e) {
-			// we'll get an empty content
-		}
+    }
 
-		String s = content.toString();
+    private static void checkNoKinaraErrors() {
 
-		if (s.contains("AQS contains one or more errors") || // some error
-				!s.contains("Found Correct Completion!")) { // no success
+        StringBuilder content = new StringBuilder();
+        BufferedReader br = null;
+        try {
+            br = new BufferedReader(new FileReader("logs/out.txt"));
 
-			if (s.length() != 0) {
-				System.err.println("Kinara returned the following violation:");
-				System.err.println(s);
-				System.exit(-1);
-			} else {
-				System.err.println("Kinara failed. Check logs/err.txt");
-			}
-		}
-	}
+            String sCurrentLine;
+            while ((sCurrentLine = br.readLine()) != null) {
+                content.append(sCurrentLine).append("\n");
+            }
+            if (br != null) {
+                br.close();
+            }
+        } catch (FileNotFoundException e) {
+            // we'll get an empty content
+        } catch (IOException e) {
+            // we'll get an empty content
+        }
 
-	public static void cleanLogs() {
-		File logs = new File("logs");
-		for (File file : logs.listFiles())
-			if (!file.isDirectory())
-				file.delete();
-	}
+        String s = content.toString();
+
+        if (s.contains("AQS contains one or more errors") || // some error
+                !s.contains("Found Correct Completion!")) { // no success
+
+            if (s.length() != 0) {
+                System.err.println("Kinara returned the following violation:");
+                System.err.println(s);
+                System.exit(-1);
+            } else {
+                System.err.println("Kinara failed. Check logs/err.txt");
+            }
+        }
+    }
+
+    public static void cleanLogs() {
+        File logs = new File("logs");
+        for (File file : logs.listFiles())
+            if (!file.isDirectory())
+                file.delete();
+    }
 }

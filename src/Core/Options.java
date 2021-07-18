@@ -1,10 +1,11 @@
 package Core;
 
-import java.util.ArrayList;
-
-import Core.Options.PhCompFeedback;
-
 public class Options {
+    public int run_repeats;
+	public boolean run_printConfidenceIntervals;
+	public boolean run_confidenceLevel95;
+	public boolean run_confidenceLevel99;
+
 	public static enum PhCompFeedback {
 		All, OnePerAction, OnePerCondition, CounterExampleOnly
 	}
@@ -98,7 +99,8 @@ public class Options {
 		phComp_displayFirabilityPrintOuts = false;
 
 		main_verbose = false;
-
+		run_repeats = 1;
+		run_confidenceLevel95 = true; //default
 		// add the command line options for eval
 		parseCommandLineOptions(args);
 

@@ -1,7 +1,6 @@
 package Main;
 
 import Core.Options;
-import Core.Options.PhCompFeedback;
 
 public class VerificationMain {
 
@@ -14,6 +13,10 @@ public class VerificationMain {
 		Utils.cleanLogs();
 		
 		// options.phCompFeedbackLevel = PhCompFeedback.All;
+
+
+		options.run_repeats = 3;
+		options.run_confidenceLevel95 = true;
 
 		if (options.mainParams_runAllBMs) {
 			Utils.runAllBMs(true /* use Firability Awareness */, options);
